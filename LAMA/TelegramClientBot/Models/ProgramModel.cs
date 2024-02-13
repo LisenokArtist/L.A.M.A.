@@ -74,12 +74,10 @@ namespace TelegramClientBot.Models
                 new PhotoCommand((PhotoTrigger)TimeTriggers.Single(x => x.GetType() == typeof(PhotoTrigger))),
             };
 
-            //PhotoCommand p = Commands[1] as PhotoCommand;
-            //if (p != null) { p.run(new string[] { "asdasd" }); }
-            //foreach (var item in TimeTriggers)
-            //{
-            //    item.Run();
-            //}
+            foreach (var item in TimeTriggers)
+            {
+                item.Run();
+            }
         }
 
         #region Инициализация основных компонентов
