@@ -1,13 +1,11 @@
 ﻿using TelegramClientBot.Models.DataBase;
 using TL;
 using SQLite;
-using System.Collections.ObjectModel;
 using TelegramClientBot.Models.Controllers.TimeTriggers;
 using TelegramClientBot.Models.Controllers.Commands.Items;
-using TL.Methods;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Primitives;
 using System.Reflection;
+using TelegramClientBot.Models.Extensions;
 
 namespace TelegramClientBot.Models
 {
@@ -64,20 +62,8 @@ namespace TelegramClientBot.Models
             await InitializateDataBase();
             await InitializateTelegram();
 
-            TimeTriggers = new List<TimerTriggerBase>
-            {
-                new PhotoTrigger(new TimeSpan(1, 0, 0)),
-            };
-            Commands = new List<CommandBase>()
-            {
-                new HelpCommand(),
-                new PhotoCommand((PhotoTrigger)TimeTriggers.Single(x => x.GetType() == typeof(PhotoTrigger))),
-            };
-
-            foreach (var item in TimeTriggers)
-            {
-                item.Run();
-            }
+            InitializateTimeTriggers();
+            InitializateCommands();
         }
 
         #region Инициализация основных компонентов
@@ -102,9 +88,101 @@ namespace TelegramClientBot.Models
 
             Client.OnUpdate += OnUpdate;
         }
+        
+        /// <summary>
+        /// Инициализация триггеров времени
+        /// </summary>
+        private void InitializateTimeTriggers()
+        {
+            var timeTriggers = new List<TimerTriggerBase>
+            {
+                new PhotoTrigger(new TimeSpan(1, 0, 0)),
+            };
+
+            timeTriggers.ForEach(x =>
+            {
+                x.OnTimeTriggered += OnTimeTriggered;
+                x.Run();
+            });
+
+            TimeTriggers = timeTriggers;
+        }
+
+        /// <summary>
+        /// Инициализация триггеров комманд
+        /// </summary>
+        private void InitializateCommands()
+        {
+            var commands = new List<CommandBase>()
+            {
+                new HelpCommand(),
+                new PhotoCommand((PhotoTrigger)TimeTriggers.Single(x => x is PhotoTrigger)),
+            };
+
+            Commands = commands;
+        }
         #endregion
 
-        #region Обработчики событий
+        #region Обработчик событий триггера времени
+        private void OnTimeTriggered(TimerTriggerBase @base)
+        {
+            switch (@base)
+            {
+                case PhotoTrigger pt: OnPhotoTrigger(pt); break;
+            }
+        }
+
+        private async void OnPhotoTrigger(PhotoTrigger pt)
+        {
+            var photosData = await Client.Photos_GetUserPhotos(Me);
+
+            if (photosData.photos.Length > 1)
+            {
+                if (pt.Ordered)
+                {
+                    var nextPhoto = photosData.photos.SkipWhile(x => x.ID != Me.photo.photo_id).Skip(1).FirstOrDefault();
+                    if (nextPhoto != null)
+                    {
+                        await OnPhotoTriggerResponse(pt, nextPhoto);
+                    }
+                }
+                else
+                {
+                    var randomize = photosData.photos.Where(x => x.ID != Me.photo.photo_id).PickRandom();
+                    if (randomize != null)
+                    {
+                        await OnPhotoTriggerResponse(pt, randomize);
+                    }
+                }
+            }
+        }
+        
+        private async Task OnPhotoTriggerResponse(PhotoTrigger photoTrigger, PhotoBase photo)
+        {
+            try
+            {
+                var response = await Client.Photos_UpdateProfilePhoto(photo);
+
+                if (response != null)
+                {
+                    Me.photo.photo_id = response.photo.ID;
+                }
+
+                if (photoTrigger.TemporalTimeTrigger != null)
+                {
+                    photoTrigger.TimeTrigger = (TimeSpan)photoTrigger.TemporalTimeTrigger;
+                    photoTrigger.TemporalTimeTrigger = null;
+                }
+            }
+            catch (TL.RpcException rpc) //FLOOD_WAIT_X
+            {
+                photoTrigger.TemporalTimeTrigger = photoTrigger.TimeTrigger;
+                photoTrigger.TimeTrigger = new TimeSpan(0, 0, rpc.X);
+            }
+        }
+        #endregion
+
+        #region Обработчики событий ТГ
         /// <summary>
         /// Основной обработчик события.
         /// </summary>
@@ -234,17 +312,18 @@ namespace TelegramClientBot.Models
         }
 
         /// <summary>
-        /// Метод получения настроек для подключения к Telegram API. Используйте следующую структуру файла secrets.json для настроек:
-        /// {
-        ///   "TGConfigurations": {
-        ///     "api_id": "xxx",
-        ///     "api_hash": "xxx",
-        ///     "phone_number": "xxx"
-        //    }
-        /// }
+        /// Метод получения настроек для подключения к Telegram API.
         /// </summary>
         public static string? Config(string what)
         {
+            /// Используйте следующую структуру файла secrets.json для настроек:
+            /// {
+            ///   "TGConfigurations": {
+            ///     "api_id": "xxx",
+            ///     "api_hash": "xxx",
+            ///     "phone_number": "xxx"
+            ///   }
+            /// }
             var builder = new ConfigurationBuilder()
                 .AddUserSecrets(Assembly.GetExecutingAssembly())
                 .Build();

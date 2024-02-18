@@ -15,7 +15,7 @@
 
         Task RunningTask { get; set; }
 
-        public event Action? OnTimeTriggered;
+        public event Action<TimerTriggerBase>? OnTimeTriggered;
 
         public bool IsRunning { get; private set; } = false;
 
@@ -27,7 +27,7 @@
                 while (IsRunning)
                 {
                     await Task.Delay(TimeTrigger);
-                    OnTimeTriggered?.Invoke();
+                    OnTimeTriggered?.Invoke(this);
                 }
             }, CancellationToken.Token);
         }
@@ -53,7 +53,7 @@
             IsRunning = false;
             CancellationToken.Cancel();
         }
-        
+
         /// <summary>
         /// Выгружает ресурсы триггера
         /// </summary>

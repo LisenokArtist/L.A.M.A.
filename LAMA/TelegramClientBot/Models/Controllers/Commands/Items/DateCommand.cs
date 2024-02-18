@@ -6,7 +6,7 @@ namespace TelegramClientBot.Models.Controllers.Commands.Items
     public sealed class DateOptions : CommandOptionsBase
     {
         [Option('f', "format", Required = false, HelpText = "Выводит результат в указанном формате")]
-        public string Format { get; set; }
+        public string Format { get; set; } = string.Empty;
     }
 
     public class DateCommand : CommandBase
